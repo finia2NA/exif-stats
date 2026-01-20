@@ -57,10 +57,33 @@ def list_cameras(path):
 
     return sorted(cameras)
 
+def get_camera_order(camera_data):
+    """
+    Return list of camera names sorted by total photo count (most photos first).
+    The camera with the most photos will be placed at the bottom of stacked histograms.
+    """
+    camera_counts = {}
+    for camera, data in camera_data.items():
+        # Use 't' (shutter time) as the canonical count since all valid photos have it
+        count = len(data['t'])
+        camera_counts[camera] = count
+
+    # Sort by count descending (most photos first = bottom of stack)
+    return sorted(camera_counts.keys(), key=lambda c: camera_counts[c], reverse=True)
+
+def get_camera_colors(cameras):
+    """Generate distinct colors for each camera using matplotlib colormap."""
+    import matplotlib
+
+    if len(cameras) <= 10:
+        cmap = matplotlib.colormaps.get_cmap('tab10')
+        return [cmap(i) for i in range(len(cameras))]
+    else:
+        cmap = matplotlib.colormaps.get_cmap('tab20')
+        return [cmap(i / len(cameras)) for i in range(len(cameras))]
+
 def process_images(path, camera_type):
-    f = []
-    t = []
-    focus = []
+    camera_data = {}  # {camera_name: {'f': [], 't': [], 'focus': []}}
 
     # Create output directory if it doesn't exist
     output_dir = 'output'
@@ -102,53 +125,109 @@ def process_images(path, camera_type):
                                     fd = exif_ifd.get(37386)    # FocalLength
 
                                     if time and stop and fd:
+                                        # Initialize camera entry if needed
+                                        if camera_name not in camera_data:
+                                            camera_data[camera_name] = {'f': [], 't': [], 'focus': []}
+
                                         # Handle both rational tuples and float values
                                         if isinstance(stop, tuple):
-                                            f.append(stop[0]/float(stop[1]))
+                                            camera_data[camera_name]['f'].append(stop[0]/float(stop[1]))
                                         else:
-                                            f.append(float(stop))
+                                            camera_data[camera_name]['f'].append(float(stop))
 
                                         if isinstance(time, tuple):
-                                            t.append(time[0]/float(time[1]))
+                                            camera_data[camera_name]['t'].append(time[0]/float(time[1]))
                                         else:
-                                            t.append(float(time))
+                                            camera_data[camera_name]['t'].append(float(time))
 
                                         if isinstance(fd, tuple):
-                                            focus.append(fd[0]/float(fd[1]))
+                                            camera_data[camera_name]['focus'].append(fd[0]/float(fd[1]))
                                         else:
-                                            focus.append(float(fd))
+                                            camera_data[camera_name]['focus'].append(float(fd))
                             except (KeyError, TypeError, ZeroDivisionError):
                                 print('Error while reading EXIF data in image {}'.format(filename))
                 except (IOError, OSError) as e:
                     print('Error opening image {}: {}'.format(filename, e))
 
 
-    print('Number of photos: {}'.format(len(t)))
+    total_photos = sum(len(data['t']) for data in camera_data.values())
+    print('Number of photos: {}'.format(total_photos))
 
-    if focus:
-        # x = np.asarray([f for f in focus if f <= 55])
-        plt.figure()
-        plt.hist(asarray(focus), bins=30)
-        plt.ylabel('Number of photos');
-        plt.xlabel('Focal distance, mm');
-        plt.savefig(os.path.join(output_dir, 'focal_distance.png'))
+    # Generate stacked histograms broken down by camera
+    if camera_data:
+        cameras = get_camera_order(camera_data)
+        colors = get_camera_colors(cameras)
 
-    if f:
-        plt.figure()
-        plt.hist(asarray(f), bins=30)
-        plt.ylabel('Number of photos');
-        plt.xlabel('f number');
-        plt.savefig(os.path.join(output_dir, 'f_number.png'))
+        # Focal distance histogram
+        focal_data = [asarray(camera_data[cam]['focus']) for cam in cameras if camera_data[cam]['focus']]
+        if focal_data:
+            plt.figure(figsize=(10, 6))
+            labels = [cam for cam in cameras if camera_data[cam]['focus']]
+            plt.hist(focal_data, bins=30, stacked=True, label=labels, color=colors[:len(labels)])
+            plt.ylabel('Number of photos')
+            plt.xlabel('Focal distance, mm')
+            plt.legend(loc='upper right')
+            plt.savefig(os.path.join(output_dir, 'focal_distance.png'))
 
-    if t:
-        plt.figure()
-        plt.hist(asarray(t), bins=logspace(log10(min(t))-1, log10(max(t)), 30))
-        plt.ylabel('Number of photos');
-        plt.xlabel('Shutter speed, s');
-        plt.gca().set_xscale("log")
-        plt.savefig(os.path.join(output_dir, 'shutter_speed.png'))
-        
-    return (f, t, focus)
+        # F-number histogram
+        f_data = [asarray(camera_data[cam]['f']) for cam in cameras if camera_data[cam]['f']]
+        if f_data:
+            plt.figure(figsize=(10, 6))
+            labels = [cam for cam in cameras if camera_data[cam]['f']]
+            plt.hist(f_data, bins=30, stacked=True, label=labels, color=colors[:len(labels)])
+            plt.ylabel('Number of photos')
+            plt.xlabel('f number')
+            plt.legend(loc='upper right')
+            plt.savefig(os.path.join(output_dir, 'f_number.png'))
+
+        # Shutter speed histogram (logarithmic base-2 with photography notation)
+        all_times = []
+        for cam_data in camera_data.values():
+            all_times.extend(cam_data['t'])
+
+        if all_times:
+            import numpy as np
+            from matplotlib.ticker import FuncFormatter
+
+            plt.figure(figsize=(10, 6))
+
+            # Use log base-2 bins for shutter speed (doubles/halves are standard in photography)
+            min_time = min(all_times)
+            max_time = max(all_times)
+            min_exp = np.floor(np.log2(min_time))
+            max_exp = np.ceil(np.log2(max_time))
+            bins = 2 ** np.linspace(min_exp - 1, max_exp, 30)
+
+            t_data = [asarray(camera_data[cam]['t']) for cam in cameras if camera_data[cam]['t']]
+            labels = [cam for cam in cameras if camera_data[cam]['t']]
+
+            plt.hist(t_data, bins=bins, stacked=True, label=labels, color=colors[:len(labels)])
+            plt.ylabel('Number of photos')
+            plt.xlabel('Shutter speed')
+            plt.gca().set_xscale("log", base=2)
+
+            # Custom formatter for photography notation
+            def shutter_speed_format(x, pos):
+                if x >= 1:
+                    # Seconds: 1", 2", 4", etc.
+                    return f'{int(x)}"' if x == int(x) else f'{x:.1f}"'
+                else:
+                    # Fractions: show just denominator (250, 500, etc.)
+                    denominator = 1 / x
+                    return f'{int(round(denominator))}'
+
+            # Use standard photography full-stop shutter speeds
+            standard_speeds = [1/8000, 1/4000, 1/2000, 1/1000, 1/500, 1/250, 1/125, 1/60, 1/30, 1/15, 1/8, 1/4, 1/2, 1, 2, 4, 8, 16, 30]
+            # Filter to only include speeds within data range
+            valid_ticks = [s for s in standard_speeds if min_time/2 <= s <= max_time*2]
+            if valid_ticks:
+                plt.gca().set_xticks(valid_ticks)
+
+            plt.gca().xaxis.set_major_formatter(FuncFormatter(shutter_speed_format))
+            plt.legend(loc='upper right')
+            plt.savefig(os.path.join(output_dir, 'shutter_speed.png'))
+
+    return camera_data
 
 
 if __name__ == '__main__':
