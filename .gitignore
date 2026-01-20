@@ -1,0 +1,11 @@
+# Virtual environment
+.venv/
+
+# Output directory for generated diagrams
+output/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
