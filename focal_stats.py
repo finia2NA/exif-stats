@@ -4,9 +4,28 @@ from PIL import Image
 import matplotlib.pyplot as plt
 from numpy import asarray, logspace, log10
 
-def is_jpeg_file(filename):
-    """Check if a file is a JPEG image by its extension."""
-    return filename.lower().endswith(('.jpg', '.jpeg', '.jpe', '.jfif'))
+# Register HEIF/HEIC support
+HEIF_SUPPORTED = False
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+    HEIF_SUPPORTED = True
+except ImportError:
+    pass  # pillow-heif not installed, HEIF/HEIC support disabled
+
+def is_supported_image(filename):
+    """Check if a file is a supported image format (JPEG or HEIF/HEIC)."""
+    lower_name = filename.lower()
+
+    # Always support JPEG formats
+    if lower_name.endswith(('.jpg', '.jpeg', '.jpe', '.jfif')):
+        return True
+
+    # Only support HEIF/HEIC if library is available
+    if HEIF_SUPPORTED and lower_name.endswith(('.heic', '.heif')):
+        return True
+
+    return False
 
 def list_cameras(path):
     """Scan directory and return all unique camera models found in EXIF data."""
@@ -14,7 +33,7 @@ def list_cameras(path):
 
     for root, dirs, files in os.walk(path):
         for file in files:
-            if is_jpeg_file(file):
+            if is_supported_image(file):
                 filename = os.path.join(root, file)
 
                 try:
@@ -50,7 +69,7 @@ def process_images(path, camera_type):
     for root, dirs, files in os.walk(path):
         for file in files:
 
-            if is_jpeg_file(file):
+            if is_supported_image(file):
                 filename = os.path.join(root, file)
 
                 try:
@@ -151,7 +170,7 @@ Examples:
         '-p', '--path',
         required=False,
         metavar='DIR',
-        help='directory to scan for JPEG files'
+        help='directory to scan for JPEG and HEIF/HEIC files'
     )
 
     parser.add_argument(

@@ -13,7 +13,7 @@ The generated diagrams are saved as PNG images in the `output/` directory.
 - **Camera Discovery**: List all unique camera models found in a directory
 - **Camera Filtering**: Analyze photos from specific camera models only
 - **Recursive Scanning**: Automatically scans subdirectories
-- **Multiple JPEG Formats**: Supports .jpg, .jpeg, .jpe, and .jfif files
+- **Multiple Image Formats**: Supports .jpg, .jpeg, .jpe, .jfif, .heic, and .heif files
 - **Smart EXIF Parsing**: Combines manufacturer and model names for accurate camera identification
 
 ## Installation
@@ -70,9 +70,8 @@ The script generates three histogram PNG files in the `output/` directory:
 - `shutter_speed.png` - Distribution of shutter speeds (logarithmic scale)
 
 ## Requirements
-- Python 3.6+
+- Python 3.10+
 - Pillow >= 9.0.0
 - matplotlib >= 3.5.0
 - numpy >= 1.21.0
-
-If you have any problems or requests, feel free to contact me!
+- pillow-heif >= 0.16.0 (for HEIF/HEIC support)
